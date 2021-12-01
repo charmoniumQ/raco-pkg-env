@@ -1,8 +1,9 @@
+#!/usr/bin/env racket
 #lang racket/base
-
 (require racket/file
          racket/format
          racket/match
+         racket/list
          racket/path
          racket/pretty
          setup/dirs)
@@ -12,13 +13,28 @@
         [dest (hash-ref env-config 'lib-dir)])
     (make-directory* dest)
     (when src
+      (define (mkdir n)
+        (make-directory* (simplify-path (build-path n ".."))))
+      (define (relative-to a b #:error-if-not-contained [error-if-not-contained #f])
+        (let loop
+            ([a-parts (explode-path (path->complete-path a))]
+             [b-parts (explode-path (path->complete-path b))])
+          (if
+           (and (not (empty? b-parts)) (equal? (first a-parts) (first b-parts)))
+           (loop (rest a-parts) (rest b-parts))
+           (if
+            (and (not (empty? b-parts)) error-if-not-contained)
+            (error (format "~a is not contained in ~a~n" a b))
+            (reroot-path b (apply build-path (append (for/list ([_ (in-range (length b-parts))]) "..") a-parts)))))))
       (define (destname n)
-        (build-path dest (file-name-from-path n)))
+        (build-path dest (relative-to n src #:error-if-not-contained #t)))
       (define (link n)
+        (mkdir (destname n))
         (make-file-or-directory-link n (destname n)))
       (define (copy n)
+        (mkdir (destname n))
         (copy-file n (destname n)))
-      (for ([fname (in-directory src)]) (proc fname copy link)))))
+      (for ([fname (in-directory src)]) (display (format "~a~n" fname)) (if (not (directory-exists? fname)) (proc fname copy link) '())))))
 
 (define (install-environment! env-dir)
   (define env-config-dir (build-path env-dir "etc"))
